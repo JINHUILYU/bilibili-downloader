@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# CMake / CLion
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+build.ninja
+.ninja_*
+
+# Runtime outputs
+downloads/
+*.log
