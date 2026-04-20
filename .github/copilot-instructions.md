@@ -50,6 +50,8 @@ There is no lint command configured in the repository at this time.
   - video output default: `downloads/video`
   - audio output default: `downloads/audio`
   - video quality choices: `best`, `1080`, `720`, `480`, `360`
+- Playlist behavior default is single-part download (`noplaylist=True`); only download full multi-part playlists when `--all-parts` is explicitly set.
+- Keep URL sanitization for shell-escaped links (`\?`, `\&`, `\=`) before validation/download.
 - Download format strategy is intentionally "quality-first with fallback chain":
   - video: `_build_video_format_selector(...)` builds descending quality candidates
   - audio: `_build_audio_format_selector(...)` tries high bitrate first, then fallback

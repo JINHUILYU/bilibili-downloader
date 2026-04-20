@@ -70,7 +70,7 @@ def resolve_redirect(url: str) -> str:
 
 def extract_video_id(url: str) -> VideoId:
     """Extract BV or av id from any supported Bilibili URL."""
-    normalized = resolve_redirect(url)
+    normalized = resolve_redirect(_sanitize_input_url(url))
 
     bv_match = re.search(r"(BV[0-9A-Za-z]{10})", normalized)
     if bv_match:
@@ -90,8 +90,14 @@ def extract_video_id(url: str) -> VideoId:
     raise CliError("Cannot parse BV/av from URL. Please provide a valid Bilibili video URL.")
 
 
+def _sanitize_input_url(url: str) -> str:
+    stripped = url.strip()
+    # Support pasted shell-escaped links like "...\\?a\\=1\\&b\\=2"
+    return re.sub(r"\\([?&=])", r"\1", stripped)
+
+
 def _validate_video_url(url: str) -> str:
-    normalized = resolve_redirect(url.strip())
+    normalized = resolve_redirect(_sanitize_input_url(url))
     parsed = urlparse(normalized)
     if parsed.scheme not in {"http", "https"} or parsed.netloc not in ALLOWED_VIDEO_HOSTS:
         raise CliError("Invalid Bilibili URL. Please provide a bilibili.com or b23.tv link.")
@@ -167,7 +173,7 @@ def fetch_basic_video_info(url: str) -> dict[str, Any]:
     }
 
 
-def download_video(url: str, output_dir: str, quality: str, container: str) -> None:
+def download_video(url: str, output_dir: str, quality: str, container: str, all_parts: bool = False) -> None:
     YoutubeDL, DownloadError = _require_yt_dlp()
     normalized = _validate_video_url(url)
     try:
@@ -179,7 +185,7 @@ def download_video(url: str, output_dir: str, quality: str, container: str) -> N
         "format": _build_video_format_selector(quality),
         "outtmpl": os.path.join(output_dir, "%(title).120s [%(id)s].%(ext)s"),
         "merge_output_format": container,
-        "noplaylist": False,
+        "noplaylist": not all_parts,
     }
 
     try:
@@ -189,7 +195,7 @@ def download_video(url: str, output_dir: str, quality: str, container: str) -> N
         raise CliError(f"Video download failed: {exc}") from exc
 
 
-def download_audio(url: str, output_dir: str, audio_format: str, audio_quality: str) -> None:
+def download_audio(url: str, output_dir: str, audio_format: str, audio_quality: str, all_parts: bool = False) -> None:
     YoutubeDL, DownloadError = _require_yt_dlp()
     normalized = _validate_video_url(url)
     try:
@@ -200,7 +206,7 @@ def download_audio(url: str, output_dir: str, audio_format: str, audio_quality: 
     options = {
         "format": _build_audio_format_selector(),
         "outtmpl": os.path.join(output_dir, "%(title).120s [%(id)s].%(ext)s"),
-        "noplaylist": False,
+        "noplaylist": not all_parts,
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -234,12 +240,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_video.add_argument("--quality", default="best", choices=["best", "1080", "720", "480", "360"], help="Video quality target")
     p_video.add_argument("--format", default="mp4", choices=["mp4", "mkv", "webm"], help="Video container")
     p_video.add_argument("--output", default="downloads/video", help="Output directory")
+    p_video.add_argument("--all-parts", action="store_true", help="Download all parts for multi-part videos")
 
     p_audio = sub.add_parser("download-audio", help="Download audio by URL")
     p_audio.add_argument("url", help="Bilibili video URL")
     p_audio.add_argument("--audio-format", default="mp3", choices=["mp3", "m4a", "aac", "wav", "flac"], help="Audio format")
     p_audio.add_argument("--audio-quality", default="192", help="Audio quality kbps")
     p_audio.add_argument("--output", default="downloads/audio", help="Output directory")
+    p_audio.add_argument("--all-parts", action="store_true", help="Download all parts for multi-part videos")
 
     return parser
 
@@ -262,12 +270,24 @@ def main() -> int:
             return 0
 
         if args.command == "download-video":
-            download_video(url=args.url, output_dir=args.output, quality=args.quality, container=args.format)
+            download_video(
+                url=args.url,
+                output_dir=args.output,
+                quality=args.quality,
+                container=args.format,
+                all_parts=args.all_parts,
+            )
             print("Video download finished.")
             return 0
 
         if args.command == "download-audio":
-            download_audio(url=args.url, output_dir=args.output, audio_format=args.audio_format, audio_quality=args.audio_quality)
+            download_audio(
+                url=args.url,
+                output_dir=args.output,
+                audio_format=args.audio_format,
+                audio_quality=args.audio_quality,
+                all_parts=args.all_parts,
+            )
             print("Audio download finished.")
             return 0
 

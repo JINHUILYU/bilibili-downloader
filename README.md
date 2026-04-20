@@ -27,6 +27,8 @@ python3 bili_cli.py --help
 python3 bili_cli.py info "https://www.bilibili.com/video/BV1HcQxBuEBp"
 python3 bili_cli.py download-video "https://www.bilibili.com/video/BV1HcQxBuEBp" --quality 1080 --format mp4
 python3 bili_cli.py download-audio "https://www.bilibili.com/video/BV1HcQxBuEBp" --audio-format mp3 --audio-quality 192
+python3 bili_cli.py download-video "https://www.bilibili.com/video/BV1Dk4y1j7oj?p=6" --quality 1080 --format mp4
+python3 bili_cli.py download-video "https://www.bilibili.com/video/BV1Dk4y1j7oj" --all-parts
 ```
 
 ## 测试
@@ -45,4 +47,7 @@ python3 -m unittest tests.test_bili_cli.TestFormatFallbackStrategy.test_video_fo
 - 音频转换由 `yt-dlp` + ffmpeg 后处理完成。
 - 仅下载你有合法权限访问与保存的内容。
 - 仅接受 `bilibili.com` 或 `b23.tv` 链接，非法链接会被显式拒绝。
+- 默认仅下载单个分P（链接中 `?p=6` 则下载第 6 P；无 `p` 参数则下载第 1 P）。
+- 如需下载整套分P，使用 `--all-parts`。
+- 支持带 shell 转义的链接输入（例如 `\?`、`\&`、`\=`）。
 - 下载策略已实现为“高质量优先，失败后按链路降级”（视频与音频均适用）。

@@ -4,6 +4,7 @@ from bili_cli import (
     CliError,
     _build_audio_format_selector,
     _build_video_format_selector,
+    _sanitize_input_url,
     _validate_video_url,
     build_parser,
     extract_video_id,
@@ -51,6 +52,12 @@ class TestFormatFallbackStrategy(unittest.TestCase):
 
 
 class TestInputValidation(unittest.TestCase):
+    def test_sanitize_shell_escaped_url(self):
+        cleaned = _sanitize_input_url(
+            r"https://www.bilibili.com/video/BV1Dk4y1j7oj\?spm_id_from\=333.788\&vd_source\=xxx\&p\=6"
+        )
+        self.assertIn("?spm_id_from=333.788&vd_source=xxx&p=6", cleaned)
+
     def test_validate_bilibili_url(self):
         self.assertIn("BV1xx411c7mD", _validate_video_url("https://www.bilibili.com/video/BV1xx411c7mD"))
 
@@ -62,6 +69,13 @@ class TestInputValidation(unittest.TestCase):
         parser = build_parser()
         with self.assertRaises(SystemExit):
             parser.parse_args(["search", "python"])
+
+    def test_parse_download_video_all_parts(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            ["download-video", "https://www.bilibili.com/video/BV1xx411c7mD", "--all-parts"]
+        )
+        self.assertTrue(args.all_parts)
 
 
 if __name__ == "__main__":
