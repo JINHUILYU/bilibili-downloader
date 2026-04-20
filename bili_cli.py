@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI tool for searching, inspecting, and downloading Bilibili videos."""
+"""CLI tool for inspecting and downloading Bilibili videos."""
 
 from __future__ import annotations
 
@@ -9,13 +9,24 @@ import os
 import re
 import sys
 from dataclasses import dataclass
-from html import unescape
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 
-SEARCH_API = "https://api.bilibili.com/x/web-interface/search/type"
 VIEW_API = "https://api.bilibili.com/x/web-interface/view"
+VIDEO_QUALITY_ORDER = ["2160", "1440", "1080", "720", "480", "360"]
+ALLOWED_VIDEO_HOSTS = {"www.bilibili.com", "bilibili.com", "b23.tv", "www.b23.tv"}
+BILIBILI_API_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://www.bilibili.com/",
+    "Origin": "https://www.bilibili.com",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+}
 
 
 @dataclass
@@ -40,8 +51,9 @@ def _require_requests():
 def _require_yt_dlp():
     try:
         from yt_dlp import YoutubeDL
+        from yt_dlp.utils import DownloadError
 
-        return YoutubeDL
+        return YoutubeDL, DownloadError
     except ImportError as exc:
         raise CliError("Missing dependency: yt-dlp. Run `pip install -r requirements.txt`.") from exc
 
@@ -52,7 +64,7 @@ def resolve_redirect(url: str) -> str:
         response = requests.get(url, timeout=10, allow_redirects=True)
         response.raise_for_status()
         return response.url
-    except Exception:
+    except requests.RequestException:
         return url
 
 
@@ -78,53 +90,67 @@ def extract_video_id(url: str) -> VideoId:
     raise CliError("Cannot parse BV/av from URL. Please provide a valid Bilibili video URL.")
 
 
-def _clean_title(raw: str) -> str:
-    return unescape(re.sub(r"<[^>]+>", "", raw)).strip()
+def _validate_video_url(url: str) -> str:
+    normalized = resolve_redirect(url.strip())
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"} or parsed.netloc not in ALLOWED_VIDEO_HOSTS:
+        raise CliError("Invalid Bilibili URL. Please provide a bilibili.com or b23.tv link.")
+    return normalized
 
 
-def search_videos(keyword: str, page: int, page_size: int) -> list[dict[str, Any]]:
+def _quality_fallback_chain(quality: str) -> list[str]:
+    if quality == "best":
+        return VIDEO_QUALITY_ORDER
+    if quality not in VIDEO_QUALITY_ORDER:
+        raise CliError(f"Unsupported quality value: {quality}")
+    return VIDEO_QUALITY_ORDER[VIDEO_QUALITY_ORDER.index(quality) :]
+
+
+def _build_video_format_selector(quality: str) -> str:
+    heights = _quality_fallback_chain(quality)
+    parts: list[str] = []
+    for height in heights:
+        parts.append(f"bestvideo[height<={height}]+bestaudio")
+    for height in heights:
+        parts.append(f"best[height<={height}]")
+    parts.append("best")
+    return "/".join(parts)
+
+
+def _build_audio_format_selector() -> str:
+    return "/".join(
+        [
+            "bestaudio[abr>=320]",
+            "bestaudio[abr>=256]",
+            "bestaudio[abr>=192]",
+            "bestaudio[abr>=128]",
+            "bestaudio",
+            "best[height<=1080]",
+            "best[height<=720]",
+            "best[height<=480]",
+            "best",
+        ]
+    )
+
+
+def _api_get_json(api_url: str, params: dict[str, Any], api_name: str) -> dict[str, Any]:
     requests = _require_requests()
-    params = {
-        "search_type": "video",
-        "keyword": keyword,
-        "page": page,
-        "page_size": page_size,
-    }
-
-    response = requests.get(SEARCH_API, params=params, timeout=10)
-    response.raise_for_status()
-
-    payload = response.json()
-    if payload.get("code") != 0:
-        raise CliError(f"Bilibili search API error: {payload.get('message', 'unknown error')}")
-
-    result = payload.get("data", {}).get("result", [])
-    output = []
-    for item in result:
-        bvid = item.get("bvid")
-        output.append(
-            {
-                "title": _clean_title(item.get("title", "")),
-                "author": item.get("author", ""),
-                "duration": item.get("duration", ""),
-                "play": item.get("play", 0),
-                "danmaku": item.get("video_review", 0),
-                "bvid": bvid,
-                "url": f"https://www.bilibili.com/video/{bvid}" if bvid else "",
-            }
-        )
-    return output
+    try:
+        response = requests.get(api_url, params=params, headers=BILIBILI_API_HEADERS, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise CliError(f"{api_name} request failed: {exc}") from exc
+    except ValueError as exc:
+        raise CliError(f"{api_name} returned invalid JSON.") from exc
 
 
 def fetch_basic_video_info(url: str) -> dict[str, Any]:
-    requests = _require_requests()
-    video_id = extract_video_id(url)
+    normalized = _validate_video_url(url)
+    video_id = extract_video_id(normalized)
     params = {video_id.kind: video_id.value}
 
-    response = requests.get(VIEW_API, params=params, timeout=10)
-    response.raise_for_status()
-
-    payload = response.json()
+    payload = _api_get_json(VIEW_API, params=params, api_name="Bilibili view API")
     if payload.get("code") != 0:
         raise CliError(f"Bilibili view API error: {payload.get('message', 'unknown error')}")
 
@@ -142,31 +168,37 @@ def fetch_basic_video_info(url: str) -> dict[str, Any]:
 
 
 def download_video(url: str, output_dir: str, quality: str, container: str) -> None:
-    YoutubeDL = _require_yt_dlp()
-    os.makedirs(output_dir, exist_ok=True)
-
-    if quality == "best":
-        format_selector = "bestvideo+bestaudio/best"
-    else:
-        format_selector = f"bestvideo[height<={quality}]+bestaudio/best[height<={quality}]"
+    YoutubeDL, DownloadError = _require_yt_dlp()
+    normalized = _validate_video_url(url)
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except OSError as exc:
+        raise CliError(f"Cannot create output directory `{output_dir}`: {exc}") from exc
 
     options = {
-        "format": format_selector,
+        "format": _build_video_format_selector(quality),
         "outtmpl": os.path.join(output_dir, "%(title).120s [%(id)s].%(ext)s"),
         "merge_output_format": container,
         "noplaylist": False,
     }
 
-    with YoutubeDL(options) as ydl:
-        ydl.download([url])
+    try:
+        with YoutubeDL(options) as ydl:
+            ydl.download([normalized])
+    except DownloadError as exc:
+        raise CliError(f"Video download failed: {exc}") from exc
 
 
 def download_audio(url: str, output_dir: str, audio_format: str, audio_quality: str) -> None:
-    YoutubeDL = _require_yt_dlp()
-    os.makedirs(output_dir, exist_ok=True)
+    YoutubeDL, DownloadError = _require_yt_dlp()
+    normalized = _validate_video_url(url)
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except OSError as exc:
+        raise CliError(f"Cannot create output directory `{output_dir}`: {exc}") from exc
 
     options = {
-        "format": "bestaudio/best",
+        "format": _build_audio_format_selector(),
         "outtmpl": os.path.join(output_dir, "%(title).120s [%(id)s].%(ext)s"),
         "noplaylist": False,
         "postprocessors": [
@@ -178,72 +210,20 @@ def download_audio(url: str, output_dir: str, audio_format: str, audio_quality: 
         ],
     }
 
-    with YoutubeDL(options) as ydl:
-        ydl.download([url])
+    try:
+        with YoutubeDL(options) as ydl:
+            ydl.download([normalized])
+    except DownloadError as exc:
+        raise CliError(f"Audio download failed: {exc}") from exc
 
 
 def _print_json(obj: Any) -> None:
     print(json.dumps(obj, indent=2, ensure_ascii=False))
 
 
-def _print_search_results(results: list[dict[str, Any]]) -> None:
-    if not results:
-        print("No search results.")
-        return
-
-    for idx, item in enumerate(results, start=1):
-        print(f"[{idx}] {item['title']}")
-        print(f"    author: {item['author']} | duration: {item['duration']}")
-        print(f"    play: {item['play']} | danmaku: {item['danmaku']}")
-        print(f"    url: {item['url']}")
-
-
-def _interactive_action(results: list[dict[str, Any]]) -> None:
-    if not results:
-        return
-
-    while True:
-        raw = input("Pick result index (or q): ").strip()
-        if raw.lower() == "q":
-            return
-        if not raw.isdigit() or int(raw) < 1 or int(raw) > len(results):
-            print("Invalid index.")
-            continue
-
-        chosen = results[int(raw) - 1]
-        url = chosen.get("url")
-        if not url:
-            print("Cannot resolve video url for this result.")
-            return
-
-        action = input("Action [i=info, dv=download video, da=download audio, q=quit]: ").strip().lower()
-        if action == "q":
-            return
-        if action == "i":
-            _print_json(fetch_basic_video_info(url))
-            return
-        if action == "dv":
-            download_video(url=url, output_dir="downloads/video", quality="best", container="mp4")
-            print("Video download finished.")
-            return
-        if action == "da":
-            download_audio(url=url, output_dir="downloads/audio", audio_format="mp3", audio_quality="192")
-            print("Audio download finished.")
-            return
-
-        print("Unknown action.")
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Bilibili CLI downloader")
     sub = parser.add_subparsers(dest="command", required=True)
-
-    p_search = sub.add_parser("search", help="Search videos by keyword")
-    p_search.add_argument("keyword", help="Keyword or sentence to search")
-    p_search.add_argument("--page", type=int, default=1, help="Page index")
-    p_search.add_argument("--limit", type=int, default=10, help="Results per page")
-    p_search.add_argument("--json", action="store_true", help="Output JSON")
-    p_search.add_argument("--interactive", action="store_true", help="Select next action after search")
 
     p_info = sub.add_parser("info", help="Fetch basic metadata by video URL")
     p_info.add_argument("url", help="Bilibili video URL")
@@ -269,16 +249,6 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        if args.command == "search":
-            results = search_videos(keyword=args.keyword, page=args.page, page_size=args.limit)
-            if args.json:
-                _print_json(results)
-            else:
-                _print_search_results(results)
-            if args.interactive:
-                _interactive_action(results)
-            return 0
-
         if args.command == "info":
             info = fetch_basic_video_info(args.url)
             if args.json:
@@ -313,4 +283,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
