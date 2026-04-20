@@ -228,21 +228,49 @@ def _print_json(obj: Any) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Bilibili CLI downloader")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Bilibili CLI downloader\n"
+            "支持视频信息查询、视频下载、音频下载。"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "示例:\n"
+            "  python3 bili_cli.py info \"https://www.bilibili.com/video/BV1xx411c7mD\"\n"
+            "  python3 bili_cli.py download-video \"https://www.bilibili.com/video/BV1Dk4y1j7oj?p=6\" --quality 1080 --format mp4\n"
+            "  python3 bili_cli.py download-video \"https://www.bilibili.com/video/BV1Dk4y1j7oj\" --all-parts\n"
+            "  python3 bili_cli.py download-audio \"https://www.bilibili.com/video/BV1xx411c7mD\" --audio-format mp3 --audio-quality 192\n\n"
+            "说明:\n"
+            "  1. 默认仅下载单个分P；使用 --all-parts 才会下载整套分P。\n"
+            "  2. 支持输入带 shell 转义的链接（例如包含 \\? \\& \\=）。"
+        ),
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_info = sub.add_parser("info", help="Fetch basic metadata by video URL")
+    p_info = sub.add_parser(
+        "info",
+        help="查询视频基础信息",
+        description="根据 Bilibili 视频链接查询标题、简介、播放数、弹幕数等信息。",
+    )
     p_info.add_argument("url", help="Bilibili video URL")
     p_info.add_argument("--json", action="store_true", help="Output JSON")
 
-    p_video = sub.add_parser("download-video", help="Download video by URL")
+    p_video = sub.add_parser(
+        "download-video",
+        help="下载视频",
+        description="下载视频（默认仅单个分P）。如需整套分P请加 --all-parts。",
+    )
     p_video.add_argument("url", help="Bilibili video URL")
     p_video.add_argument("--quality", default="best", choices=["best", "1080", "720", "480", "360"], help="Video quality target")
     p_video.add_argument("--format", default="mp4", choices=["mp4", "mkv", "webm"], help="Video container")
     p_video.add_argument("--output", default="downloads/video", help="Output directory")
     p_video.add_argument("--all-parts", action="store_true", help="Download all parts for multi-part videos")
 
-    p_audio = sub.add_parser("download-audio", help="Download audio by URL")
+    p_audio = sub.add_parser(
+        "download-audio",
+        help="下载音频",
+        description="下载音频（默认仅单个分P）。如需整套分P请加 --all-parts。",
+    )
     p_audio.add_argument("url", help="Bilibili video URL")
     p_audio.add_argument("--audio-format", default="mp3", choices=["mp3", "m4a", "aac", "wav", "flac"], help="Audio format")
     p_audio.add_argument("--audio-quality", default="192", help="Audio quality kbps")
