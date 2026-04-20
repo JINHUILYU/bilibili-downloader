@@ -2,7 +2,7 @@
 
 ## Build, test, and lint commands
 
-This repository is a Python CLI project and currently has no dedicated build step.
+This repository is a Python CLI project with `uv` for environment setup and `unittest` for tests.
 
 ```bash
 # install dependencies
@@ -25,15 +25,18 @@ There is no lint command configured in the repository at this time.
 ## High-level architecture
 
 - The project is centered on a single entry module: `bili_cli.py`.
-- `build_parser()` defines three subcommands: `info`, `download-video`, `download-audio`.
+- `build_parser()` defines three CLI subcommands only: `info`, `download-video`, `download-audio` (search was intentionally removed).
 - `main()` routes parsed args to domain functions and normalizes process exit behavior:
   - expected user/dependency/runtime issues raise `CliError` and return exit code `2`
   - `KeyboardInterrupt` returns `130`
 - Network and external integrations are separated by function:
-  - metadata: Bilibili view API (`VIEW_API`)
+  - metadata: Bilibili view API (`VIEW_API`) through `_api_get_json(...)`
   - media download: `yt-dlp` wrapper functions (`download_video`, `download_audio`)
-- URL normalization and ID extraction are centralized in `extract_video_id()` + `resolve_redirect()`.
-- Tests currently focus on video ID parsing behavior (`tests/test_bili_cli.py`).
+- URL handling is layered:
+  - `resolve_redirect(...)` normalizes short/redirect links
+  - `_validate_video_url(...)` enforces allowed hosts (`bilibili.com`, `b23.tv`)
+  - `extract_video_id(...)` extracts `bvid`/`aid`
+- Tests in `tests/test_bili_cli.py` cover URL parsing/validation, removed search command, and media format fallback selectors.
 
 ## Key conventions in this codebase
 
@@ -47,8 +50,7 @@ There is no lint command configured in the repository at this time.
   - video output default: `downloads/video`
   - audio output default: `downloads/audio`
   - video quality choices: `best`, `1080`, `720`, `480`, `360`
-- Download format strategy should stay "quality-first with fallback chain" for both `download_video` and `download_audio`.
-- Keep these URLs as the current manual download regression examples:
-  - `https://www.bilibili.com/video/BV1NGHGzJEfx/`
-  - `https://www.bilibili.com/video/BV1KgSdBZELv/`
+- Download format strategy is intentionally "quality-first with fallback chain":
+  - video: `_build_video_format_selector(...)` builds descending quality candidates
+  - audio: `_build_audio_format_selector(...)` tries high bitrate first, then fallback
 - Generated/runtime artifacts should remain untracked, especially `downloads/`, caches, and local IDE/venv files as defined in `.gitignore`.

@@ -46,8 +46,3 @@ python3 -m unittest tests.test_bili_cli.TestFormatFallbackStrategy.test_video_fo
 - 仅下载你有合法权限访问与保存的内容。
 - 仅接受 `bilibili.com` 或 `b23.tv` 链接，非法链接会被显式拒绝。
 - 下载策略已实现为“高质量优先，失败后按链路降级”（视频与音频均适用）。
-
-## 下一个下载测试 URL
-
-- https://www.bilibili.com/video/BV1NGHGzJEfx/
-- https://www.bilibili.com/video/BV1KgSdBZELv/
