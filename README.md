@@ -1,4 +1,4 @@
-# Bilibili 命令行下载器（MVP）
+# Bilibili 命令行下载器
 
 这是一个 Python 命令行工具，支持以下能力：
 
