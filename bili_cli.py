@@ -173,7 +173,14 @@ def fetch_basic_video_info(url: str) -> dict[str, Any]:
     }
 
 
-def download_video(url: str, output_dir: str, quality: str, container: str, all_parts: bool = False) -> None:
+def download_video(
+    url: str,
+    output_dir: str,
+    quality: str,
+    container: str,
+    all_parts: bool = False,
+    cookies_from_browser: str | None = None,
+) -> None:
     YoutubeDL, DownloadError = _require_yt_dlp()
     normalized = _validate_video_url(url)
     try:
@@ -187,6 +194,8 @@ def download_video(url: str, output_dir: str, quality: str, container: str, all_
         "merge_output_format": container,
         "noplaylist": not all_parts,
     }
+    if cookies_from_browser:
+        options["cookiesfrombrowser"] = (cookies_from_browser,)
 
     try:
         with YoutubeDL(options) as ydl:
@@ -195,7 +204,14 @@ def download_video(url: str, output_dir: str, quality: str, container: str, all_
         raise CliError(f"Video download failed: {exc}") from exc
 
 
-def download_audio(url: str, output_dir: str, audio_format: str, audio_quality: str, all_parts: bool = False) -> None:
+def download_audio(
+    url: str,
+    output_dir: str,
+    audio_format: str,
+    audio_quality: str,
+    all_parts: bool = False,
+    cookies_from_browser: str | None = None,
+) -> None:
     YoutubeDL, DownloadError = _require_yt_dlp()
     normalized = _validate_video_url(url)
     try:
@@ -215,6 +231,8 @@ def download_audio(url: str, output_dir: str, audio_format: str, audio_quality: 
             }
         ],
     }
+    if cookies_from_browser:
+        options["cookiesfrombrowser"] = (cookies_from_browser,)
 
     try:
         with YoutubeDL(options) as ydl:
@@ -239,10 +257,12 @@ def build_parser() -> argparse.ArgumentParser:
             "  python3 bili_cli.py info \"https://www.bilibili.com/video/BV1xx411c7mD\"\n"
             "  python3 bili_cli.py download-video \"https://www.bilibili.com/video/BV1Dk4y1j7oj?p=6\" --quality 1080 --format mp4\n"
             "  python3 bili_cli.py download-video \"https://www.bilibili.com/video/BV1Dk4y1j7oj\" --all-parts\n"
-            "  python3 bili_cli.py download-audio \"https://www.bilibili.com/video/BV1xx411c7mD\" --audio-format mp3 --audio-quality 192\n\n"
+            "  python3 bili_cli.py download-audio \"https://www.bilibili.com/video/BV1xx411c7mD\" --audio-format mp3 --audio-quality 192\n"
+            "  python3 bili_cli.py download-audio \"https://www.bilibili.com/video/BV1GQXBYTEtR\" --cookies-from-browser chrome\n\n"
             "说明:\n"
             "  1. 默认仅下载单个分P；使用 --all-parts 才会下载整套分P。\n"
-            "  2. 支持输入带 shell 转义的链接（例如包含 \\? \\& \\=）。"
+            "  2. 支持输入带 shell 转义的链接（例如包含 \\? \\& \\=）。\n"
+            "  3. 如遇 HTTP 412 错误，加 --cookies-from-browser 从浏览器提取 Cookie 绕过限制。"
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -265,6 +285,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_video.add_argument("--format", default="mp4", choices=["mp4", "mkv", "webm"], help="Video container")
     p_video.add_argument("--output", default="downloads/video", help="Output directory")
     p_video.add_argument("--all-parts", action="store_true", help="Download all parts for multi-part videos")
+    p_video.add_argument(
+        "--cookies-from-browser",
+        default=None,
+        metavar="BROWSER",
+        help="Extract cookies from the given browser (e.g. chrome, firefox, safari) to bypass restrictions",
+    )
 
     p_audio = sub.add_parser(
         "download-audio",
@@ -276,6 +302,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_audio.add_argument("--audio-quality", default="192", help="Audio quality kbps")
     p_audio.add_argument("--output", default="downloads/audio", help="Output directory")
     p_audio.add_argument("--all-parts", action="store_true", help="Download all parts for multi-part videos")
+    p_audio.add_argument(
+        "--cookies-from-browser",
+        default=None,
+        metavar="BROWSER",
+        help="Extract cookies from the given browser (e.g. chrome, firefox, safari) to bypass restrictions",
+    )
 
     return parser
 
@@ -304,6 +336,7 @@ def main() -> int:
                 quality=args.quality,
                 container=args.format,
                 all_parts=args.all_parts,
+                cookies_from_browser=args.cookies_from_browser,
             )
             print("Video download finished.")
             return 0
@@ -315,6 +348,7 @@ def main() -> int:
                 audio_format=args.audio_format,
                 audio_quality=args.audio_quality,
                 all_parts=args.all_parts,
+                cookies_from_browser=args.cookies_from_browser,
             )
             print("Audio download finished.")
             return 0
